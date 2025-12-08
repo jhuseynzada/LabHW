@@ -97,3 +97,58 @@ end
 
 legend('Location','best');
 hold off;
+
+% Naive Bayes
+
+classes = unique(d);       % possible labels: -1 and 1
+C = numel(classes);        % number of classes
+
+% Storage for model parameters
+mu    = zeros(C, 2);       % mean of x1 and x2 for each class
+sigma = zeros(C, 2);       % standard deviation
+prior = zeros(C, 1);       % prior probability of each class
+
+% Training
+for ci = 1:C
+    c = classes(ci);
+    
+    idx = (d == c);        
+    Xc = X(idx, :);        
+    
+    mu(ci, :)    = mean(Xc, 1);           % mean of features
+    sigma(ci, :) = std(Xc, 0, 1);         % standard deviation
+    sigma(ci, sigma(ci,:) == 0) = 1e-6;   
+
+    prior(ci) = sum(idx) / N;             % amount of samples belonging to this class
+end
+
+y_nb = zeros(N,1);
+
+for n = 1:N
+    x = X(n, :);            % sample (x1, x2)
+    log_post = zeros(C, 1);
+
+    for ci = 1:C
+        % Start with log prior probability
+        lp = log(prior(ci));
+
+        % Add log likelihood for each feature
+        for j = 1:2
+            m = mu(ci, j);
+            s = sigma(ci, j);
+
+            % Gaussian log-likelihood
+            lp = lp - 0.5*log(2*pi) - log(s) - ((x(j)-m)^2)/(2*s^2);
+        end
+
+        log_post(ci) = lp;
+    end
+
+    % Picking class with highest log-posterior
+    [~, idx_max] = max(log_post);
+    y_nb(n) = classes(idx_max);
+end
+
+% Naive Bayes Accuracy
+nb_accuracy = mean(y_nb == d) * 100;
+fprintf('Naive Bayes accuracy: %.2f %%\n', nb_accuracy);
