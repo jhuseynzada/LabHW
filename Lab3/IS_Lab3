@@ -1,0 +1,153 @@
+clear; clc; close all;
+
+% Generating training data (20 examples)
+x = (0.1 : (1/22) : 1)';   % column vector, 20 points
+y = (1 + 0.6*sin(2*pi*x/0.7) + 0.3*sin(2*pi*x)) / 2;
+
+N = length(x);
+
+% Manually selected RBF parameters
+c1 = 0.30;  r1 = 0.15;
+c2 = 0.80;  r2 = 0.15;
+
+% Build RBF features
+phi1 = exp(-((x - c1).^2) ./ (2*r1^2));
+phi2 = exp(-((x - c2).^2) ./ (2*r2^2));
+
+% Designing matrix for output layer: [bias, phi1, phi2]
+Z = [ones(N,1), phi1, phi2];
+
+% Perceptron / LMS (delta rule) settings
+eta_w = 0.15;
+epochs = 3000;
+
+% Initializing output weights: [w0; w1; w2]
+w = zeros(3,1);
+
+mse_hist_base = zeros(epochs,1);
+
+for ep = 1:epochs
+    % online (sample-by-sample) update
+    for i = 1:N
+        yhat = Z(i,:) * w;          % prediction
+        e = y(i) - yhat;            % error
+        w = w + eta_w * e * Z(i,:)';% LMS update
+    end
+
+    % track MSE
+    yhat_all = Z*w;
+    mse_hist_base(ep) = mean((y - yhat_all).^2);
+end
+
+yhat_base = Z*w;
+
+% Additional Task
+
+% Initializing parameters (starting near reasonable values)
+c1_g = 0.25;  r1_g = 0.20;
+c2_g = 0.85;  r2_g = 0.20;
+
+w_g = zeros(3,1);
+
+eta_w2 = 0.12;     % learning rate for weights
+eta_c  = 0.03;     % learning rate for centers
+eta_r  = 0.01;     % learning rate for radii
+epochs2 = 4000;
+
+r_min = 0.03;      % r -> 0 should be avoided
+
+mse_hist_adapt = zeros(epochs2,1);
+
+for ep = 1:epochs2
+    for i = 1:N
+        xi = x(i);
+        yi = y(i);
+
+        % current RBF outputs
+        phi1 = exp(-((xi - c1_g)^2) / (2*r1_g^2));
+        phi2 = exp(-((xi - c2_g)^2) / (2*r2_g^2));
+
+        zi = [1; phi1; phi2];     % [bias; phi1; phi2]
+        yhat = (zi') * w_g;
+        e = yi - yhat;
+
+        % updating output weights (LMS)
+        w_g = w_g + eta_w2 * e * zi;
+
+        % gradients for c and r (chain rule)
+        % phi = exp(-d^2/(2r^2)), where d = (x-c)
+        % dphi/dc = phi * (x-c)/(r^2)
+        % dphi/dr = phi * (x-c)^2 / (r^3)
+
+        d1 = (xi - c1_g);
+        d2 = (xi - c2_g);
+
+        dphi1_dc = phi1 * (d1 / (r1_g^2));
+        dphi2_dc = phi2 * (d2 / (r2_g^2));
+
+        dphi1_dr = phi1 * ((d1^2) / (r1_g^3));
+        dphi2_dr = phi2 * ((d2^2) / (r2_g^3));
+
+        % yhat = w0 + w1*phi1 + w2*phi2
+        % dyhat/dc1 = w1 * dphi1/dc1, etc.
+        dyhat_dc1 = w_g(2) * dphi1_dc;
+        dyhat_dc2 = w_g(3) * dphi2_dc;
+
+        dyhat_dr1 = w_g(2) * dphi1_dr;
+        dyhat_dr2 = w_g(3) * dphi2_dr;
+
+        % We minimize 0.5*e^2, gradient: dE/dp = -e * dyhat/dp
+        % so gradient descent update: p = p - eta * dE/dp = p + eta * e * dyhat/dp
+        c1_g = c1_g + eta_c * e * dyhat_dc1;
+        c2_g = c2_g + eta_c * e * dyhat_dc2;
+
+        r1_g = r1_g + eta_r * e * dyhat_dr1;
+        r2_g = r2_g + eta_r * e * dyhat_dr2;
+
+        % clamp radii
+        r1_g = max(r1_g, r_min);
+        r2_g = max(r2_g, r_min);
+    end
+
+    % compute current MSE
+    phi1_all = exp(-((x - c1_g).^2) ./ (2*r1_g^2));
+    phi2_all = exp(-((x - c2_g).^2) ./ (2*r2_g^2));
+    Zg = [ones(N,1), phi1_all, phi2_all];
+    yhat_all = Zg * w_g;
+    mse_hist_adapt(ep) = mean((y - yhat_all).^2);
+end
+
+% final adaptive prediction
+phi1_all = exp(-((x - c1_g).^2) ./ (2*r1_g^2));
+phi2_all = exp(-((x - c2_g).^2) ./ (2*r2_g^2));
+Zg = [ones(N,1), phi1_all, phi2_all];
+yhat_adapt = Zg * w_g;
+
+% Results
+fprintf('===== BASE (manual c,r) =====\n');
+fprintf('c1=%.3f r1=%.3f | c2=%.3f r2=%.3f\n', c1, r1, c2, r2);
+fprintf('w0=%.4f w1=%.4f w2=%.4f\n', w(1), w(2), w(3));
+fprintf('Final MSE = %.6f\n\n', mse_hist_base(end));
+
+fprintf('===== ADAPTIVE (learn c,r) =====\n');
+fprintf('c1=%.3f r1=%.3f | c2=%.3f r2=%.3f\n', c1_g, r1_g, c2_g, r2_g);
+fprintf('w0=%.4f w1=%.4f w2=%.4f\n', w_g(1), w_g(2), w_g(3));
+fprintf('Final MSE = %.6f\n', mse_hist_adapt(end));
+
+% Plots
+figure;
+plot(x, y, 'o', 'LineWidth', 1.2); hold on;
+plot(x, yhat_base, '-', 'LineWidth', 1.6);
+plot(x, yhat_adapt, '-', 'LineWidth', 1.6);
+grid on;
+xlabel('x'); ylabel('y');
+legend('Target y','RBF (manual c,r)','RBF (adaptive c,r)','Location','best');
+title('RBF Approximation (2 Gaussian RBFs)');
+
+figure;
+plot(mse_hist_base, 'LineWidth', 1.4); hold on;
+plot(mse_hist_adapt, 'LineWidth', 1.4);
+grid on;
+xlabel('Epoch'); ylabel('MSE');
+legend('Base (manual c,r)','Adaptive (learn c,r)','Location','best');
+title('Training error (MSE)');
